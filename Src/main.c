@@ -50,7 +50,7 @@ I2C_HandleTypeDef hi2c1;
 I2S_HandleTypeDef hi2s3;
 
 osThreadId defaultTaskHandle;
-osThreadId myTask02Handle;
+osThreadId LED4_BlinkHandle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -61,7 +61,7 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_I2S3_Init(void);
 void StartDefaultTask(void const * argument);
-void StartTask02(void const * argument);
+void StartTask_LED4_Blink(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -128,12 +128,13 @@ int main(void)
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of myTask02 */
-  osThreadDef(myTask02, StartTask02, osPriorityIdle, 0, 128);
-  myTask02Handle = osThreadCreate(osThread(myTask02), NULL);
+  /* definition and creation of LED4_Blink */
+  osThreadDef(LED4_Blink, StartTask_LED4_Blink, osPriorityLow, 0, 128);
+  LED4_BlinkHandle = osThreadCreate(osThread(LED4_Blink), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+
   /* USER CODE END RTOS_THREADS */
 
   /* Start scheduler */
@@ -390,6 +391,8 @@ void StartDefaultTask(void const * argument)
   MX_LWIP_Init();
 
   /* USER CODE BEGIN 5 */
+  httpd_init();
+
   /* Infinite loop */
   for(;;)
   {
@@ -398,22 +401,25 @@ void StartDefaultTask(void const * argument)
   /* USER CODE END 5 */ 
 }
 
-/* USER CODE BEGIN Header_StartTask02 */
+/* USER CODE BEGIN Header_StartTask_LED4_Blink */
 /**
-* @brief Function implementing the myTask02 thread.
+* @brief Function implementing the LED4_Blink thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartTask02 */
-void StartTask02(void const * argument)
+/* USER CODE END Header_StartTask_LED4_Blink */
+void StartTask_LED4_Blink(void const * argument)
 {
-  /* USER CODE BEGIN StartTask02 */
+  /* USER CODE BEGIN StartTask_LED4_Blink */
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	HAL_GPIO_WritePin(GPIOD, LD4_Pin, GPIO_PIN_RESET);
+    osDelay(250);
+	HAL_GPIO_WritePin(GPIOD, LD4_Pin, GPIO_PIN_SET);
+    osDelay(250);
   }
-  /* USER CODE END StartTask02 */
+  /* USER CODE END StartTask_LED4_Blink */
 }
 
 /**
