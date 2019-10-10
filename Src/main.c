@@ -22,11 +22,12 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "lwip.h"
-#include "usb_host.h"
+#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "usbd_cdc_if.h"
+#include "task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -125,7 +126,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 1280);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* definition and creation of LED4_Blink */
@@ -372,6 +373,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+char buf[4000];
 
 /* USER CODE END 4 */
 
@@ -384,19 +386,26 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void const * argument)
 {
-  /* init code for USB_HOST */
-  MX_USB_HOST_Init();
-
   /* init code for LWIP */
   MX_LWIP_Init();
+
+  /* init code for USB_DEVICE */
+  MX_USB_DEVICE_Init();
 
   /* USER CODE BEGIN 5 */
   httpd_init();
 
+  uint8_t buffer[] = "\n\r TaskList:\n\r";
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	CDC_Transmit_FS(buffer,sizeof(buffer));
+	vTaskList(buf);
+	CDC_Transmit_FS(buf,strlen(buf));
+	//uxTaskGetSystemState();
+
+    osDelay(1000);
   }
   /* USER CODE END 5 */ 
 }

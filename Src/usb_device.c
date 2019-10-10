@@ -1,9 +1,9 @@
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * @file            : usb_host.c
-  * @version         : v1.0_Cube
-  * @brief           : This file implements the USB Host
+  * @file           : usb_device.c
+  * @version        : v1.0_Cube
+  * @brief          : This file implements the USB Device
   ******************************************************************************
   * @attention
   *
@@ -21,9 +21,11 @@
 
 /* Includes ------------------------------------------------------------------*/
 
-#include "usb_host.h"
-#include "usbh_core.h"
-#include "usbh_cdc.h"
+#include "usb_device.h"
+#include "usbd_core.h"
+#include "usbd_desc.h"
+#include "usbd_cdc.h"
+#include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -39,9 +41,8 @@
 
 /* USER CODE END PFP */
 
-/* USB Host core handle declaration */
-USBH_HandleTypeDef hUsbHostFS;
-ApplicationTypeDef Appli_state = APPLICATION_IDLE;
+/* USB Device Core handle declaration. */
+USBD_HandleTypeDef hUsbDeviceFS;
 
 /*
  * -- Insert your variables declaration here --
@@ -51,11 +52,6 @@ ApplicationTypeDef Appli_state = APPLICATION_IDLE;
 /* USER CODE END 0 */
 
 /*
- * user callback declaration
- */
-static void USBH_UserProcess(USBH_HandleTypeDef *phost, uint8_t id);
-
-/*
  * -- Insert your external function declaration here --
  */
 /* USER CODE BEGIN 1 */
@@ -63,60 +59,35 @@ static void USBH_UserProcess(USBH_HandleTypeDef *phost, uint8_t id);
 /* USER CODE END 1 */
 
 /**
-  * Init USB host library, add supported class and start the library
+  * Init USB device Library, add supported class and start the library
   * @retval None
   */
-void MX_USB_HOST_Init(void)
+void MX_USB_DEVICE_Init(void)
 {
-  /* USER CODE BEGIN USB_HOST_Init_PreTreatment */
+  /* USER CODE BEGIN USB_DEVICE_Init_PreTreatment */
   
-  /* USER CODE END USB_HOST_Init_PreTreatment */
+  /* USER CODE END USB_DEVICE_Init_PreTreatment */
   
-  /* Init host Library, add supported class and start the library. */
-  if (USBH_Init(&hUsbHostFS, USBH_UserProcess, HOST_FS) != USBH_OK)
+  /* Init Device Library, add supported class and start the library. */
+  if (USBD_Init(&hUsbDeviceFS, &FS_Desc, DEVICE_FS) != USBD_OK)
   {
     Error_Handler();
   }
-  if (USBH_RegisterClass(&hUsbHostFS, USBH_CDC_CLASS) != USBH_OK)
+  if (USBD_RegisterClass(&hUsbDeviceFS, &USBD_CDC) != USBD_OK)
   {
     Error_Handler();
   }
-  if (USBH_Start(&hUsbHostFS) != USBH_OK)
+  if (USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS) != USBD_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USB_HOST_Init_PostTreatment */
+  if (USBD_Start(&hUsbDeviceFS) != USBD_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USB_DEVICE_Init_PostTreatment */
   
-  /* USER CODE END USB_HOST_Init_PostTreatment */
-}
-
-/*
- * user callback definition
- */
-static void USBH_UserProcess  (USBH_HandleTypeDef *phost, uint8_t id)
-{
-  /* USER CODE BEGIN CALL_BACK_1 */
-  switch(id)
-  {
-  case HOST_USER_SELECT_CONFIGURATION:
-  break;
-
-  case HOST_USER_DISCONNECTION:
-  Appli_state = APPLICATION_DISCONNECT;
-  break;
-
-  case HOST_USER_CLASS_ACTIVE:
-  Appli_state = APPLICATION_READY;
-  break;
-
-  case HOST_USER_CONNECTION:
-  Appli_state = APPLICATION_START;
-  break;
-
-  default:
-  break;
-  }
-  /* USER CODE END CALL_BACK_1 */
+  /* USER CODE END USB_DEVICE_Init_PostTreatment */
 }
 
 /**
