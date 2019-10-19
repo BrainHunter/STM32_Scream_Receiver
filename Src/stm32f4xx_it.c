@@ -205,5 +205,19 @@ void OTG_FS_IRQHandler(void)
 
 /* USER CODE BEGIN 1 */
 
+extern I2S_HandleTypeDef       hAudioOutI2s;
+
+/**
+  * @brief  This function handles main I2S interrupt.
+  * @param  None
+  * @retval 0 if correct communication, else wrong communication
+  */
+void I2S3_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(hAudioOutI2s.hdmatx);
+
+}
+
+
 /* USER CODE END 1 */
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

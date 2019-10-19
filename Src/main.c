@@ -28,6 +28,7 @@
 /* USER CODE BEGIN Includes */
 #include "usbd_cdc_if.h"
 #include "task.h"
+#include "math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,6 +53,7 @@ I2S_HandleTypeDef hi2s3;
 
 osThreadId defaultTaskHandle;
 osThreadId LED4_BlinkHandle;
+osThreadId AudioPlaybackHandle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -63,6 +65,7 @@ static void MX_I2C1_Init(void);
 static void MX_I2S3_Init(void);
 void StartDefaultTask(void const * argument);
 void StartTask_LED4_Blink(void const * argument);
+void StartAudioPlayback(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -126,12 +129,16 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 1280);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 256);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* definition and creation of LED4_Blink */
-  osThreadDef(LED4_Blink, StartTask_LED4_Blink, osPriorityLow, 0, 128);
+  osThreadDef(LED4_Blink, StartTask_LED4_Blink, osPriorityLow, 0, 32);
   LED4_BlinkHandle = osThreadCreate(osThread(LED4_Blink), NULL);
+
+  /* definition and creation of AudioPlayback */
+  osThreadDef(AudioPlayback, StartAudioPlayback, osPriorityNormal, 0, 128);
+  AudioPlaybackHandle = osThreadCreate(osThread(AudioPlayback), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -373,7 +380,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-char buf[4000];
+char buf[1000];
 
 /* USER CODE END 4 */
 
@@ -395,7 +402,7 @@ void StartDefaultTask(void const * argument)
   /* USER CODE BEGIN 5 */
   httpd_init();
 
-  uint8_t buffer[] = "\n\r TaskList:\n\r";
+  uint8_t buffer[] = "\n\r TaskList:\n\r Task\t\tStatus\tPrio\tStack\tNum\r\n";
 
   /* Infinite loop */
   for(;;)
@@ -429,6 +436,47 @@ void StartTask_LED4_Blink(void const * argument)
     osDelay(250);
   }
   /* USER CODE END StartTask_LED4_Blink */
+}
+
+
+#define BUFFSIZE 1024*8*2
+int16_t soundbuf[BUFFSIZE];
+
+/* USER CODE BEGIN Header_StartAudioPlayback */
+/**
+* @brief Function implementing the AudioPlayback thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartAudioPlayback */
+void StartAudioPlayback(void const * argument)
+{
+
+
+  /* USER CODE BEGIN StartAudioPlayback */
+  //fill sound buffer:
+  for(int i = 0 ; i < BUFFSIZE; i=i+2)
+  {
+	 soundbuf[i] = 32000 * sin((float)i/128*2*M_PI);
+	 //soundbuf[i+1] = soundbuf[i];
+	 soundbuf[i+1] = 32000 * sin((float)i/256*2*M_PI);
+  }
+
+  if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,50, 44100)!= AUDIO_OK)
+  {
+	  while (1)
+	  {
+		  osDelay(1);
+	  }
+  }
+
+  /* Infinite loop */
+  for(;;)
+  {
+	BSP_AUDIO_OUT_Play(soundbuf, BUFFSIZE);
+	osDelay(200);
+  }
+  /* USER CODE END StartAudioPlayback */
 }
 
 /**
