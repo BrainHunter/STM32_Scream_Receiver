@@ -29,6 +29,8 @@
 #include "usbd_cdc_if.h"
 #include "task.h"
 #include "math.h"
+#include "lwip/api.h"
+#include "ScreamClient.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -133,11 +135,11 @@ int main(void)
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* definition and creation of LED4_Blink */
-  osThreadDef(LED4_Blink, StartTask_LED4_Blink, osPriorityLow, 0, 32);
+  osThreadDef(LED4_Blink, StartTask_LED4_Blink, osPriorityLow, 0, 128);
   LED4_BlinkHandle = osThreadCreate(osThread(LED4_Blink), NULL);
 
   /* definition and creation of AudioPlayback */
-  osThreadDef(AudioPlayback, StartAudioPlayback, osPriorityNormal, 0, 128);
+  osThreadDef(AudioPlayback, StartAudioPlayback, osPriorityNormal, 0, 512);
   AudioPlaybackHandle = osThreadCreate(osThread(AudioPlayback), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -438,10 +440,6 @@ void StartTask_LED4_Blink(void const * argument)
   /* USER CODE END StartTask_LED4_Blink */
 }
 
-
-#define BUFFSIZE 1024*8*2
-int16_t soundbuf[BUFFSIZE];
-
 /* USER CODE BEGIN Header_StartAudioPlayback */
 /**
 * @brief Function implementing the AudioPlayback thread.
@@ -451,16 +449,14 @@ int16_t soundbuf[BUFFSIZE];
 /* USER CODE END Header_StartAudioPlayback */
 void StartAudioPlayback(void const * argument)
 {
-
-
   /* USER CODE BEGIN StartAudioPlayback */
   //fill sound buffer:
-  for(int i = 0 ; i < BUFFSIZE; i=i+2)
-  {
-	 soundbuf[i] = 32000 * sin((float)i/128*2*M_PI);
-	 //soundbuf[i+1] = soundbuf[i];
-	 soundbuf[i+1] = 32000 * sin((float)i/256*2*M_PI);
-  }
+//  for(int i = 0 ; i < BUFFSIZE; i=i+2)
+//  {
+//	 soundbuf[i] = 32000 * sin((float)i/128*2*M_PI);
+//	 //soundbuf[i+1] = soundbuf[i];
+//	 soundbuf[i+1] = 32000 * sin((float)i/256*2*M_PI);
+//  }
 
   if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,50, 44100)!= AUDIO_OK)
   {
@@ -470,10 +466,74 @@ void StartAudioPlayback(void const * argument)
 	  }
   }
 
+  //open udp server
+  err_t err=0, recv_err;
+  static struct netconn *conn;
+  static struct netbuf *buf;
+  static struct ip_addr *addr;
+  static unsigned short port;
+
+  // netif_dhcp_data(netif)
+  ip_addr_t mcastip;
+  //ipaddr_aton(SCREAM_DEFAULT_MULTICAST_GROUP, &mcastip);+
+  IP4_ADDR(&mcastip, 239,255,77,77);
+
+  conn = netconn_new(NETCONN_UDP);
+  if (conn!= NULL)
+  {
+	  err = netconn_bind(conn, IP_ADDR_ANY, SCREAM_DEFAULT_PORT);
+
+	  if (err == ERR_OK)
+	  {
+
+		  while(gnetif.ip_addr.addr == 0)
+		  {
+			  osDelay(2000);
+		  }
+
+		  ip_addr_t localip = gnetif.ip_addr;
+		  err = netconn_join_leave_group(conn, &mcastip, &localip,  NETCONN_JOIN );
+
+		  if (err != ERR_OK)
+		  {
+		  while (1)
+				  {
+			  	  	  osDelay(200);
+				  }
+		  }
+
+		  while (1)
+		  {
+			  recv_err = netconn_recv(conn, &buf);
+
+			  if (recv_err == ERR_OK)
+			  {
+				addr = netbuf_fromaddr(buf);
+				port = netbuf_fromport(buf);
+				void* databuf;
+				uint16_t datasize;
+				netbuf_data(buf, &databuf, &datasize);
+
+				Scream_ret_enum Scream_ret = Scream_ParsePacket(databuf, datasize);
+
+				//netconn_connect(conn, addr, port);
+				//buf->addr.addr = 0;
+				//netconn_send(conn,buf);
+				netbuf_delete(buf);
+			  }
+		  }
+	  }
+	  else // (err == ERR_OK)
+	  {
+		  netconn_delete(conn);
+	  }
+   }
+
+
   /* Infinite loop */
   for(;;)
   {
-	BSP_AUDIO_OUT_Play(soundbuf, BUFFSIZE);
+	//BSP_AUDIO_OUT_Play(soundbuf, BUFFSIZE);
 	osDelay(200);
   }
   /* USER CODE END StartAudioPlayback */
