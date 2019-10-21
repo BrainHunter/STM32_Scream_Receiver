@@ -458,20 +458,30 @@ void StartAudioPlayback(void const * argument)
 //	 soundbuf[i+1] = 32000 * sin((float)i/256*2*M_PI);
 //  }
 
-  if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,50, 44100)!= AUDIO_OK)
-  {
-	  while (1)
-	  {
-		  osDelay(1);
-	  }
-  }
+//  if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,50, 44100)!= AUDIO_OK)
+//  {
+//	  while (1)
+//	  {
+//		  osDelay(1);
+//	  }
+//  }
+
+	if(Scream_Init() != ScreamOK)
+	{
+		// error while initializing the Scream Player
+		// stay here 4 ever
+		while (1)
+		{
+			osDelay(1);
+		}
+	}
 
   //open udp server
   err_t err=0, recv_err;
   static struct netconn *conn;
   static struct netbuf *buf;
-  static struct ip_addr *addr;
-  static unsigned short port;
+  //static struct ip_addr *addr;
+  //static unsigned short port;
 
   // netif_dhcp_data(netif)
   ip_addr_t mcastip;
@@ -485,41 +495,46 @@ void StartAudioPlayback(void const * argument)
 
 	  if (err == ERR_OK)
 	  {
-
+		  // wait until ip address is set
 		  while(gnetif.ip_addr.addr == 0)
 		  {
-			  osDelay(2000);
+			  osDelay(200);
 		  }
 
+
 		  ip_addr_t localip = gnetif.ip_addr;
+		  // join multicast group
 		  err = netconn_join_leave_group(conn, &mcastip, &localip,  NETCONN_JOIN );
 
 		  if (err != ERR_OK)
 		  {
-		  while (1)
-				  {
-			  	  	  osDelay(200);
-				  }
+			  while (1)
+			  {
+				  osDelay(200);
+			  }
 		  }
 
+		  // rceveive the pakets and hand em to the Scream Player
 		  while (1)
 		  {
 			  recv_err = netconn_recv(conn, &buf);
 
 			  if (recv_err == ERR_OK)
 			  {
-				addr = netbuf_fromaddr(buf);
-				port = netbuf_fromport(buf);
-				void* databuf;
-				uint16_t datasize;
-				netbuf_data(buf, &databuf, &datasize);
+				Scream_ret_enum Scream_ret = Scream_SinkBuffer(buf);
 
-				Scream_ret_enum Scream_ret = Scream_ParsePacket(databuf, datasize);
+				//addr = netbuf_fromaddr(buf);
+				//port = netbuf_fromport(buf);
+				//void* databuf;
+				//uint16_t datasize;
+				//netbuf_data(buf, &databuf, &datasize);
+
+				//Scream_ret_enum Scream_ret = Scream_ParsePacket(databuf, datasize);
 
 				//netconn_connect(conn, addr, port);
 				//buf->addr.addr = 0;
 				//netconn_send(conn,buf);
-				netbuf_delete(buf);
+				//netbuf_delete(buf);
 			  }
 		  }
 	  }

@@ -7,6 +7,89 @@
 
 
 #include "ScreamClient.h"
+#include "stm32f4_discovery_audio.h"
+
+/*
+ * Scream netbuf Fifo
+ *
+ */
+
+#define FIFO_SIZE 16
+
+volatile int readptr = 0;
+int writeptr = 0;
+
+struct netbuf* FifoMem[FIFO_SIZE];
+
+int sFIFO_isFull()
+{
+	if( (writeptr + 1 == readptr) ||
+		(readptr == 0 && writeptr +1 == FIFO_SIZE))
+	{
+		return 1;
+	}
+	return 0;
+}
+
+// add a buffer to the fifo:
+int sFIFO_write(struct netbuf *buf)
+{
+	if(!sFIFO_isFull())
+	{
+		FifoMem[writeptr++] = buf;
+	}
+	else
+	{
+		return 0;
+	}
+	// check for writeptr overflow:
+	if(writeptr >= FIFO_SIZE)
+	{
+		writeptr = 0;
+	}
+	return 1;
+}
+
+// add a buffer to the fifo:
+int sFIFO_read(struct netbuf **buf)
+{
+	if(writeptr == readptr)
+	{ // fifo empty
+		return 0;
+	}
+
+	*buf = FifoMem[readptr];
+	// check for readptr overflow:
+	if(readptr >= FIFO_SIZE)
+	{
+		readptr = 0;
+	}
+	return 1;
+}
+
+
+
+/*
+ *
+ *
+ *
+ */
+volatile Scream_state_enum ActualState;
+
+Scream_ret_enum Scream_Init(void)
+{
+	ActualState = Scream_Stop;
+
+	if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,50, 44100)!= AUDIO_OK)
+	{
+		while (1)
+		{
+			osDelay(1);
+		}
+	}
+
+	return ScreamOK;
+}
 
 /*
  * Data is transferred in UDP frames with a payload size of max. 1157 bytes, consisting of 5 bytes header and 1152 bytes PCM data.
@@ -22,11 +105,11 @@
 
 screamHeader currentSetting;
 
-Scream_ret_enum Scream_ParsePacket(unsigned char* pbuf, int size){
+Scream_ret_enum Scream_ParsePacket(unsigned char* pbuf, int paketsize){
 	// packet < Headder
-	if (size < HEADER_SIZE) return ScreamErr;
+	if (paketsize < HEADER_SIZE) return ScreamErr;
 	// packet larger than allowed?
-	if (size > MAX_SO_PACKETSIZE) return ScreamErr;
+	if (paketsize > MAX_SO_PACKETSIZE) return ScreamErr;
 
 	currentSetting.sampleRate = ((pbuf[0] >= 128) ? 44100 : 48000) * (pbuf[0] % 128);
 
@@ -51,4 +134,92 @@ Scream_ret_enum Scream_ParsePacket(unsigned char* pbuf, int size){
 
     currentSetting.channelMap = (pbuf[4] << 8) | pbuf[3];
 
+    return ScreamOK;
 }
+
+
+volatile struct netbuf *playing_buffer;
+
+Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
+{
+	void* databuf;
+	uint16_t datasize;
+	netbuf_data(buf, &databuf, &datasize);
+
+	uint16_t paketsize = netbuf_len(buf);
+
+	Scream_ret_enum ret= Scream_ParsePacket(databuf, paketsize);
+	if(ScreamOK != ret)
+	{
+		// Packet header is wrong -> ignore packet
+		netbuf_delete(buf);
+		return ret;
+	}
+
+
+	// add the netbuff to the fifo
+	sFIFO_write(buf);
+
+	if(ActualState == Scream_Stop)
+	{
+			playing_buffer = buf;
+			// start playing of the buffer
+			BSP_AUDIO_OUT_Play(databuf+5, datasize-5); // data - header
+			ActualState = Scream_Play;
+	}
+
+
+//	switch(ActualState)
+//	{
+//		Scream_Play:
+//
+//				break;
+//		Scream_Stop:
+//
+//			break;
+//		default:
+//			// something bad happened:
+//			ActualState = Scream_Stop;
+//			return ScreamErr;
+//			break;
+//	}
+
+	//
+	return ScreamOK;
+}
+
+/**
+* @brief  Calculates the remaining file size and new position of the pointer.
+* @param  None
+* @retval None
+*/
+void BSP_AUDIO_OUT_TransferComplete_CallBack(void)
+{
+	void* databuf;
+	uint16_t datasize;
+	// get next pbuf from curently playing netbuf:
+	if(netbuf_next(playing_buffer) >= 0 )
+	{
+		netbuf_data(playing_buffer, &databuf, &datasize);
+		BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)databuf, datasize);
+		return;
+	}
+	//last_pbuf already used. try to get the next netbuf from the fifo:
+	netbuf_delete(playing_buffer);
+	sFIFO_read(&playing_buffer);
+
+	netbuf_data(playing_buffer, &databuf, &datasize);
+	BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)(databuf+5), datasize-5);		// headersize!
+
+
+
+	// = BUFFER_OFFSET_FULL;
+  //BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)&Audio_Buffer[0], AUDIO_BUFFER_SIZE / 2);
+}
+
+
+
+
+
+
+
