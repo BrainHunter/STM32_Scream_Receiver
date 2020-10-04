@@ -129,6 +129,8 @@ unsigned long timediff(unsigned long t1, unsigned long t2)
  *
  */
 volatile Scream_state_enum ActualState;
+screamHeader currentSetting;
+
 
 Scream_ret_enum Scream_Init(void)
 {
@@ -142,6 +144,8 @@ Scream_ret_enum Scream_Init(void)
 			osDelay(1);
 		}
 	}
+
+	currentSetting.sampleRate = 44100;
 
 	return ScreamOK;
 }
@@ -158,36 +162,63 @@ Scream_ret_enum Scream_Init(void)
  *
  * */
 
-screamHeader currentSetting;
+
 
 Scream_ret_enum Scream_ParsePacket(unsigned char* pbuf, int paketsize){
+	screamHeader packetSetting;
 	// packet < Headder
 	if (paketsize < HEADER_SIZE) return ScreamErr;
 	// packet larger than allowed?
 	if (paketsize > MAX_SO_PACKETSIZE) return ScreamErr;
 
-	currentSetting.sampleRate = ((pbuf[0] >= 128) ? 44100 : 48000) * (pbuf[0] % 128);
+	packetSetting.sampleRate = ((pbuf[0] >= 128) ? 44100 : 48000) * (pbuf[0] % 128);
+
+	// check if samplerate is set, else set correct.
+	if(currentSetting.sampleRate != packetSetting.sampleRate)
+	{
+		// Stop Playback:
+
+		ActualState = Scream_Stop;
+		BSP_AUDIO_OUT_Stop(0);
+		// reset buffers:
+		buffer_read = 0;
+		buffer_write = 0;
+
+		if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,80, packetSetting.sampleRate)!= AUDIO_OK)
+		{
+			while (1)
+			{
+				osDelay(1);
+			}
+		}
+		currentSetting.sampleRate = packetSetting.sampleRate;
+	}
+
 
 	switch (pbuf[1])
 	{
-		case 16:  currentSetting.bytesPerSample = 2; break;
-		case 24:  currentSetting.bytesPerSample = 3; break;
-		case 32:  currentSetting.bytesPerSample = 4; break;
+		case 16:  packetSetting.bytesPerSample = 2; break;
+		case 24:  packetSetting.bytesPerSample = 3; break;
+		case 32:  packetSetting.bytesPerSample = 4; break;
 		default:
 			//if (verbosity > 0) {
 			// 	fprintf(stderr, "Unsupported sample size %hhu, not playing until next format switch.\n", cur_server_size);
 			//}
-			currentSetting.sampleRate = 0;
+			packetSetting.sampleRate = 0;
 			return ScreamFmt;
 	}
 
-	currentSetting.channels = pbuf[2];
-	if(currentSetting.channels != 2)
+	packetSetting.channels = pbuf[2];
+	if(packetSetting.channels != 2)
 	{
 		return ScreamUnsup;
 	}
 
-    currentSetting.channelMap = (pbuf[4] << 8) | pbuf[3];
+	packetSetting.channelMap = (pbuf[4] << 8) | pbuf[3];
+
+
+
+
 
     return ScreamOK;
 }
@@ -299,12 +330,12 @@ Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
 
 	//
 //	int set = (P+I)/10000;
-	//set_PLL(13);
+	//set_PLL(-4);
 
 	// debug output:
 	char buff[100];
 	//sprintf(buff, "P: %-5d I: %-6d set: %3d fill: %3d diff: %3d fdiff: %3d SRm: %8lu \r\n", P, I, set, buffs, diff, fdiff, SampleRateMeasured);
-	sprintf(buff, "fill: %3d SRm: %8lu \r\n",  buffs, SampleRateMeasured);
+	sprintf(buff, "fill: %3d SR:%d  SRm: %8lu \r\n",  buffs, currentSetting.sampleRate,  SampleRateMeasured);
 	//CDC_Transmit_FS(buff,sizeof(buff));
 	CDC_Transmit_FS(buff,strlen(buff));
 
@@ -318,6 +349,7 @@ Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
 			BSP_AUDIO_OUT_Play(ScreamBuffer[buffer_read].data, ScreamBuffer[buffer_read].size/2); // data - header
 			buffer_read++;
 			ActualState = Scream_Play;
+			//set_PLL(-1);
 	}
 
 
@@ -358,7 +390,7 @@ void BSP_AUDIO_OUT_TransferComplete_CallBack(void)
 		{
 			buffer_read=0;
 		}
-
+		HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_RESET);
 	}
 	else
 	{
@@ -366,6 +398,9 @@ void BSP_AUDIO_OUT_TransferComplete_CallBack(void)
 		BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)zeroBuffer, ZERO_BUFFER_SIZE);
 
 		//ActualState = Scream_Stop;
+		// buffer is empty: blink LED 5
+		HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_SET);
+
 
 	}
 
@@ -395,8 +430,8 @@ void BSP_AUDIO_OUT_TransferComplete_CallBack(void)
 //    PLLI2S_VCO = f(VCO clock) = f(PLLI2S clock input) � (PLLI2SN/PLLM)
 //    I2SCLK = f(PLLI2S clock output) = f(VCO clock) / PLLI2SR */
 //    rccclkinit.PeriphClockSelection = RCC_PERIPHCLK_I2S;
-//    rccclkinit.PLLI2S.PLLI2SN = 258+offset;
-//    rccclkinit.PLLI2S.PLLI2SR = 3;
+//    rccclkinit.PLLI2S.PLLI2SN = 271+offset;
+//    rccclkinit.PLLI2S.PLLI2SR = 6;
 //    HAL_RCCEx_PeriphCLKConfig(&rccclkinit);
 //
 //
