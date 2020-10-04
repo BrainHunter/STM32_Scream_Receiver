@@ -440,8 +440,8 @@ void StartTask_LED4_Blink(void const * argument)
   /* USER CODE END StartTask_LED4_Blink */
 }
 
-#define BUFFSIZE 512
-unsigned char soundbuf[BUFFSIZE*2];
+//#define BUFFSIZE 512
+//unsigned char soundbuf[BUFFSIZE*2];
 
 /* USER CODE BEGIN Header_StartAudioPlayback */
 /**
@@ -455,12 +455,12 @@ void StartAudioPlayback(void const * argument)
   static int packetCount = 0;
   /* USER CODE BEGIN StartAudioPlayback */
   //fill sound buffer:
-  for(int i = 0 ; i < BUFFSIZE; i=i+2)
-  {
-	  *(int16_t*)(&soundbuf[i*2]) = 32000 * sin((float)i/128*2*M_PI);
+//  for(int i = 0 ; i < BUFFSIZE; i=i+2)
+//  {
+//	  *(int16_t*)(&soundbuf[i*2]) = 32000 * sin((float)i/128*2*M_PI);
 //	 //soundbuf[i+1] = soundbuf[i];
 	// *(int16_t*)(&soundbuf[i*2+2]) = 32000 * sin((float)i/256*2*M_PI);
-  }
+//  }
 
 //  if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,50, 44100)!= AUDIO_OK)
 //  {

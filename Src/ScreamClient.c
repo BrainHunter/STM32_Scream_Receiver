@@ -232,7 +232,7 @@ Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
 		transferedSamples = 0;
 		startTime = now;
 	}
-
+	// END measure bandwidth
 
 
 
@@ -242,6 +242,7 @@ Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
 	int buffer_tmp;
 	if(!buffer_isFull())
 	{
+		// copy over the netbuf
 		netbuf_copy_partial (buf, ScreamBuffer[buffer_write].data, MAX_PAYLOAD, HEADER_SIZE);
 		ScreamBuffer[buffer_write].size = paketsize-HEADER_SIZE;
 		netbuf_delete(buf);
@@ -254,7 +255,7 @@ Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
 		}
 	}
 	else
-	{	// Buffer is full
+	{	// Buffer is full: blink LED3
 		HAL_GPIO_WritePin(GPIOD, LD3_Pin, GPIO_PIN_SET);
 		netbuf_delete(buf);
 		HAL_GPIO_WritePin(GPIOD, LD3_Pin, GPIO_PIN_RESET);
@@ -264,74 +265,51 @@ Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
 
 
 
-#if 0 // test if it even works...
-	int buffs = buffer_numItems();
-	// modify pll to keep buffers within 5 .. NUM_Buffers - 5:
-	// buffer is nearly full: speed up the PLL
-	if(buffs > (NUM_BUFFERS - 10))
-	{
-		HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_SET);
-		if(++pllnOffset > 15)
-		{
-			pllnOffset = 15;
-		}
-		set_PLL(pllnOffset);
-		HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_RESET);
-	}
-	// buffer nearly empty: slow down
-	if(buffs < 5)
-	{
-		HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_SET);
-		if(--pllnOffset < -5)
-		{
-			pllnOffset = -5;
-		}
-		set_PLL(pllnOffset);
-		HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_RESET);
-	}
-#endif
-
 	// P & I control loop for PLL:
-	#define kp 	1000	//100
-	#define ki 	1		//3
+//	#define kp 	1000	//100
+//	#define ki 	1		//3
 
 	int buffs = buffer_numItems();
-	static int I=0;
-    int P = 0;
-	#define BUFFER_TARGET ((NUM_BUFFERS/2))
+//	static int I=0;
+//   int P = 0;
+//	#define BUFFER_TARGET ((NUM_BUFFERS/2))
 
-	int diff = ((buffs - BUFFER_TARGET) * 100) / BUFFER_TARGET;		// difference from target in percent
+//	int diff = ((buffs - BUFFER_TARGET) * 100) / BUFFER_TARGET;		// difference from target in percent
     //if(diff < 12 && diff > -12) diff = 0;
     //if(diff >= 12) diff -= 12;
     //if(diff <= -12) diff += 12;
 
 	// diff lowpass filter:
-	static int fdiff  =0;
-	fdiff = ((fdiff * 9)+(diff*1))/10;
+//	static int fdiff  =0;
+//	fdiff = ((fdiff * 9)+(diff*1))/10;
 
 
 
 
 	// Proportional:
-	P = fdiff * kp;
+//	P = fdiff * kp;
 
 	// Integral :
-	I = I + fdiff * ki;
+//	I = I + fdiff * ki;
 
-	if(I < -250000) I = -250000;
-	if(I > 250000)  I = 250000;
+//	if(I < -250000) I = -250000;
+//	if(I > 250000)  I = 250000;
 
 
 
 	//
-	int set = (P+I)/10000;
+//	int set = (P+I)/10000;
 	//set_PLL(13);
 
 	// debug output:
 	char buff[100];
-	sprintf(buff, "P: %-5d I: %-6d set: %3d fill: %3d diff: %3d fdiff: %3d SRm: %8lu \r\n", P, I, set, buffs, diff, fdiff, SampleRateMeasured);
+	//sprintf(buff, "P: %-5d I: %-6d set: %3d fill: %3d diff: %3d fdiff: %3d SRm: %8lu \r\n", P, I, set, buffs, diff, fdiff, SampleRateMeasured);
+	sprintf(buff, "fill: %3d SRm: %8lu \r\n",  buffs, SampleRateMeasured);
 	//CDC_Transmit_FS(buff,sizeof(buff));
 	CDC_Transmit_FS(buff,strlen(buff));
+
+
+	// Start the Playback if there are 10 buffers stored
 	if(ActualState == Scream_Stop && buffs > 10)
 	{
 			// start playing of the buffer
@@ -398,37 +376,37 @@ void BSP_AUDIO_OUT_TransferComplete_CallBack(void)
 
 
 
-void set_PLL(int offset){
-	RCC_PeriphCLKInitTypeDef rccclkinit;
-	static int oldOffset = 0;
-	// do not let offset run out of limits
-	if(offset > 23)
-		offset = 23;
-
-	if(offset < -23)
-		offset = -23;
-
-	if(offset == oldOffset) return;
-	oldOffset = offset;
-
-	HAL_RCCEx_GetPeriphCLKConfig(&rccclkinit);
-
-    /* I2S clock config
-    PLLI2S_VCO = f(VCO clock) = f(PLLI2S clock input) � (PLLI2SN/PLLM)
-    I2SCLK = f(PLLI2S clock output) = f(VCO clock) / PLLI2SR */
-    rccclkinit.PeriphClockSelection = RCC_PERIPHCLK_I2S;
-    rccclkinit.PLLI2S.PLLI2SN = 258+offset;
-    rccclkinit.PLLI2S.PLLI2SR = 3;
-    HAL_RCCEx_PeriphCLKConfig(&rccclkinit);
-
-
-    //
-    //__HAL_RCC_PLLI2S_CONFIG(PeriphClkInit->PLLI2S.PLLI2SN , PeriphClkInit->PLLI2S.PLLI2SR);
-    //
-    //__HAL_RCC_PLLI2S_DISABLE();
-   // __HAL_RCC_PLLI2S_CONFIG(258+offset , 3);
-    //__HAL_RCC_PLLI2S_ENABLE();
-}
+//void set_PLL(int offset){
+//	RCC_PeriphCLKInitTypeDef rccclkinit;
+//	static int oldOffset = 0;
+//	// do not let offset run out of limits
+//	if(offset > 23)
+//		offset = 23;
+//
+//	if(offset < -23)
+//		offset = -23;
+//
+//	if(offset == oldOffset) return;
+//	oldOffset = offset;
+//
+//	HAL_RCCEx_GetPeriphCLKConfig(&rccclkinit);
+//
+//    /* I2S clock config
+//    PLLI2S_VCO = f(VCO clock) = f(PLLI2S clock input) � (PLLI2SN/PLLM)
+//    I2SCLK = f(PLLI2S clock output) = f(VCO clock) / PLLI2SR */
+//    rccclkinit.PeriphClockSelection = RCC_PERIPHCLK_I2S;
+//    rccclkinit.PLLI2S.PLLI2SN = 258+offset;
+//    rccclkinit.PLLI2S.PLLI2SR = 3;
+//    HAL_RCCEx_PeriphCLKConfig(&rccclkinit);
+//
+//
+//    //
+//    //__HAL_RCC_PLLI2S_CONFIG(PeriphClkInit->PLLI2S.PLLI2SN , PeriphClkInit->PLLI2S.PLLI2SR);
+//    //
+//    //__HAL_RCC_PLLI2S_DISABLE();
+//   // __HAL_RCC_PLLI2S_CONFIG(258+offset , 3);
+//    //__HAL_RCC_PLLI2S_ENABLE();
+//}
 
 
 
