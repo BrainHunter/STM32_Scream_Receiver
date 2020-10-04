@@ -25,7 +25,10 @@ typedef enum{
 	ScreamFmt = -2,
 
 // Unsupported
-	ScreamUnsup = -3
+	ScreamUnsup = -3,
+
+// Buffer full
+	ScreamBFull = -4
 
 } Scream_ret_enum;
 
@@ -36,7 +39,8 @@ typedef enum{
 }Scream_state_enum;
 
 #define HEADER_SIZE 5
-#define MAX_SO_PACKETSIZE 1152+HEADER_SIZE
+#define MAX_PAYLOAD 1152
+#define MAX_SO_PACKETSIZE MAX_PAYLOAD+HEADER_SIZE
 
 typedef struct {
 	unsigned int 	sampleRate;
@@ -47,7 +51,8 @@ typedef struct {
 
 typedef struct {
 	unsigned int 	size;
-	unsigned char 	data[MAX_SO_PACKETSIZE];
+	//unsigned char 	data[MAX_PAYLOAD];
+	int16_t 	data[MAX_PAYLOAD/2];
 } screamPacket;
 
 

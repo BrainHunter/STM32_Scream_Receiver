@@ -7,7 +7,10 @@
 
 
 #include "ScreamClient.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include "stm32f4_discovery_audio.h"
+
 
 /*
  * Scream netbuf Fifo
@@ -68,6 +71,57 @@ int sFIFO_read(struct netbuf **buf)
 }
 
 
+/*
+ * Scream Data buffers:
+ *
+ * */
+#define NUM_BUFFERS 32
+
+screamPacket ScreamBuffer[NUM_BUFFERS];
+int buffer_read = 0;
+int buffer_write = 0;
+
+#define ZERO_BUFFER_SIZE 100
+uint16_t zeroBuffer[ZERO_BUFFER_SIZE];
+
+int buffer_isFull()
+{
+	if( (buffer_write + 1 == buffer_read) ||
+		(buffer_read == 0 && buffer_write +1 == NUM_BUFFERS))
+	{
+		return 1;
+	}
+	return 0;
+}
+
+int buffer_numItems()
+{
+	int w = buffer_write;
+	int r = buffer_read;
+
+	int num = (w + NUM_BUFFERS - r) % NUM_BUFFERS;
+	return num;
+
+}
+
+
+/*
+ *
+ *
+ *
+ *
+ */
+
+
+unsigned long timediff(unsigned long t1, unsigned long t2)
+{
+    signed long d = (signed long)t1 - (signed long)t2;
+    if(d < 0) d = -d;
+    return (unsigned long) d;
+}
+
+
+
 
 /*
  *
@@ -80,7 +134,8 @@ Scream_ret_enum Scream_Init(void)
 {
 	ActualState = Scream_Stop;
 
-	if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,50, 44100)!= AUDIO_OK)
+	if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,80, 44100)!= AUDIO_OK)
+	//if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,80, 48000)!= AUDIO_OK)
 	{
 		while (1)
 		{
@@ -142,10 +197,12 @@ volatile struct netbuf *playing_buffer;
 
 Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
 {
+	//static int pllnOffset = 0;
 	void* databuf;
 	uint16_t datasize;
-	netbuf_data(buf, &databuf, &datasize);
 
+	// copy data from netbuf to databuf
+	netbuf_data(buf, &databuf, &datasize);
 	uint16_t paketsize = netbuf_len(buf);
 
 	Scream_ret_enum ret= Scream_ParsePacket(databuf, paketsize);
@@ -156,15 +213,132 @@ Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
 		return ret;
 	}
 
+	// measure bandwidth:
+	static TickType_t startTime = 0;
+	static uint64_t transferedSamples = 0;
+	static uint64_t SampleRateMeasured = 0;
 
-	// add the netbuff to the fifo
-	sFIFO_write(buf);
+	TickType_t now = xTaskGetTickCount();
+	uint32_t td = timediff(now, startTime);
+	//sum all samples:
+	transferedSamples += (paketsize - HEADER_SIZE)/4;	//4 byte = 32bit= 16 r + 16 l
 
-	if(ActualState == Scream_Stop)
+	if(td >= 1000 * portTICK_RATE_MS *10)
 	{
-			playing_buffer = buf;
+		// calculate SampleRate:
+		SampleRateMeasured = transferedSamples *100 * portTICK_RATE_MS * 1000 / td;
+
+		// reset all
+		transferedSamples = 0;
+		startTime = now;
+	}
+
+
+
+
+
+
+	// copy buffer:
+	int buffer_tmp;
+	if(!buffer_isFull())
+	{
+		netbuf_copy_partial (buf, ScreamBuffer[buffer_write].data, MAX_PAYLOAD, HEADER_SIZE);
+		ScreamBuffer[buffer_write].size = paketsize-HEADER_SIZE;
+		netbuf_delete(buf);
+
+		buffer_tmp = buffer_write;
+		buffer_write++;
+		if(buffer_write >= NUM_BUFFERS)	// check for write counter overflow.
+		{
+			buffer_write=0;
+		}
+	}
+	else
+	{	// Buffer is full
+		HAL_GPIO_WritePin(GPIOD, LD3_Pin, GPIO_PIN_SET);
+		netbuf_delete(buf);
+		HAL_GPIO_WritePin(GPIOD, LD3_Pin, GPIO_PIN_RESET);
+		return ScreamBFull;
+
+	}
+
+
+
+#if 0 // test if it even works...
+	int buffs = buffer_numItems();
+	// modify pll to keep buffers within 5 .. NUM_Buffers - 5:
+	// buffer is nearly full: speed up the PLL
+	if(buffs > (NUM_BUFFERS - 10))
+	{
+		HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_SET);
+		if(++pllnOffset > 15)
+		{
+			pllnOffset = 15;
+		}
+		set_PLL(pllnOffset);
+		HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_RESET);
+	}
+	// buffer nearly empty: slow down
+	if(buffs < 5)
+	{
+		HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_SET);
+		if(--pllnOffset < -5)
+		{
+			pllnOffset = -5;
+		}
+		set_PLL(pllnOffset);
+		HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_RESET);
+	}
+#endif
+
+	// P & I control loop for PLL:
+	#define kp 	1000	//100
+	#define ki 	1		//3
+
+	int buffs = buffer_numItems();
+	static int I=0;
+    int P = 0;
+	#define BUFFER_TARGET ((NUM_BUFFERS/2))
+
+	int diff = ((buffs - BUFFER_TARGET) * 100) / BUFFER_TARGET;		// difference from target in percent
+    //if(diff < 12 && diff > -12) diff = 0;
+    //if(diff >= 12) diff -= 12;
+    //if(diff <= -12) diff += 12;
+
+	// diff lowpass filter:
+	static int fdiff  =0;
+	fdiff = ((fdiff * 9)+(diff*1))/10;
+
+
+
+
+	// Proportional:
+	P = fdiff * kp;
+
+	// Integral :
+	I = I + fdiff * ki;
+
+	if(I < -250000) I = -250000;
+	if(I > 250000)  I = 250000;
+
+
+
+	//
+	int set = (P+I)/10000;
+	//set_PLL(13);
+
+	// debug output:
+	char buff[100];
+	sprintf(buff, "P: %-5d I: %-6d set: %3d fill: %3d diff: %3d fdiff: %3d SRm: %8lu \r\n", P, I, set, buffs, diff, fdiff, SampleRateMeasured);
+	//CDC_Transmit_FS(buff,sizeof(buff));
+	CDC_Transmit_FS(buff,strlen(buff));
+	if(ActualState == Scream_Stop && buffs > 10)
+	{
 			// start playing of the buffer
-			BSP_AUDIO_OUT_Play(databuf+5, datasize-5); // data - header
+			//BSP_AUDIO_OUT_Play(ScreamBuffer[buffer_tmp].data, ScreamBuffer[buffer_tmp].size/2); // data - header
+			// buffer_read = buffer_write;		// set the fifo correctly
+			BSP_AUDIO_OUT_Play(ScreamBuffer[buffer_read].data, ScreamBuffer[buffer_read].size/2); // data - header
+			buffer_read++;
 			ActualState = Scream_Play;
 	}
 
@@ -195,22 +369,27 @@ Scream_ret_enum Scream_SinkBuffer (struct netbuf *buf)
 */
 void BSP_AUDIO_OUT_TransferComplete_CallBack(void)
 {
-	void* databuf;
-	uint16_t datasize;
-	// get next pbuf from curently playing netbuf:
-	if(netbuf_next(playing_buffer) >= 0 )
+
+	//check if data available:
+	if ( buffer_write != buffer_read)
 	{
-		netbuf_data(playing_buffer, &databuf, &datasize);
-		BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)databuf, datasize);
-		return;
+		BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)ScreamBuffer[buffer_read].data, ScreamBuffer[buffer_read].size/2);
+
+		buffer_read++;
+		if(buffer_read >= NUM_BUFFERS)	// check for read counter overflow.
+		{
+			buffer_read=0;
+		}
+
 	}
-	//last_pbuf already used. try to get the next netbuf from the fifo:
-	netbuf_delete(playing_buffer);
-	sFIFO_read(&playing_buffer);
+	else
+	{
+		// output zero
+		BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)zeroBuffer, ZERO_BUFFER_SIZE);
 
-	netbuf_data(playing_buffer, &databuf, &datasize);
-	BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)(databuf+5), datasize-5);		// headersize!
+		//ActualState = Scream_Stop;
 
+	}
 
 
 	// = BUFFER_OFFSET_FULL;
@@ -219,6 +398,37 @@ void BSP_AUDIO_OUT_TransferComplete_CallBack(void)
 
 
 
+void set_PLL(int offset){
+	RCC_PeriphCLKInitTypeDef rccclkinit;
+	static int oldOffset = 0;
+	// do not let offset run out of limits
+	if(offset > 23)
+		offset = 23;
+
+	if(offset < -23)
+		offset = -23;
+
+	if(offset == oldOffset) return;
+	oldOffset = offset;
+
+	HAL_RCCEx_GetPeriphCLKConfig(&rccclkinit);
+
+    /* I2S clock config
+    PLLI2S_VCO = f(VCO clock) = f(PLLI2S clock input) � (PLLI2SN/PLLM)
+    I2SCLK = f(PLLI2S clock output) = f(VCO clock) / PLLI2SR */
+    rccclkinit.PeriphClockSelection = RCC_PERIPHCLK_I2S;
+    rccclkinit.PLLI2S.PLLI2SN = 258+offset;
+    rccclkinit.PLLI2S.PLLI2SR = 3;
+    HAL_RCCEx_PeriphCLKConfig(&rccclkinit);
+
+
+    //
+    //__HAL_RCC_PLLI2S_CONFIG(PeriphClkInit->PLLI2S.PLLI2SN , PeriphClkInit->PLLI2S.PLLI2SR);
+    //
+    //__HAL_RCC_PLLI2S_DISABLE();
+   // __HAL_RCC_PLLI2S_CONFIG(258+offset , 3);
+    //__HAL_RCC_PLLI2S_ENABLE();
+}
 
 
 

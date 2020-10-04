@@ -409,9 +409,9 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	CDC_Transmit_FS(buffer,sizeof(buffer));
-	vTaskList(buf);
-	CDC_Transmit_FS(buf,strlen(buf));
+	//CDC_Transmit_FS(buffer,sizeof(buffer));
+	//vTaskList(buf);
+	//CDC_Transmit_FS(buf,strlen(buf));
 	//uxTaskGetSystemState();
 
     osDelay(1000);
@@ -440,6 +440,9 @@ void StartTask_LED4_Blink(void const * argument)
   /* USER CODE END StartTask_LED4_Blink */
 }
 
+#define BUFFSIZE 512
+unsigned char soundbuf[BUFFSIZE*2];
+
 /* USER CODE BEGIN Header_StartAudioPlayback */
 /**
 * @brief Function implementing the AudioPlayback thread.
@@ -449,14 +452,15 @@ void StartTask_LED4_Blink(void const * argument)
 /* USER CODE END Header_StartAudioPlayback */
 void StartAudioPlayback(void const * argument)
 {
+  static int packetCount = 0;
   /* USER CODE BEGIN StartAudioPlayback */
   //fill sound buffer:
-//  for(int i = 0 ; i < BUFFSIZE; i=i+2)
-//  {
-//	 soundbuf[i] = 32000 * sin((float)i/128*2*M_PI);
+  for(int i = 0 ; i < BUFFSIZE; i=i+2)
+  {
+	  *(int16_t*)(&soundbuf[i*2]) = 32000 * sin((float)i/128*2*M_PI);
 //	 //soundbuf[i+1] = soundbuf[i];
-//	 soundbuf[i+1] = 32000 * sin((float)i/256*2*M_PI);
-//  }
+	// *(int16_t*)(&soundbuf[i*2+2]) = 32000 * sin((float)i/256*2*M_PI);
+  }
 
 //  if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE,50, 44100)!= AUDIO_OK)
 //  {
@@ -522,6 +526,9 @@ void StartAudioPlayback(void const * argument)
 			  if (recv_err == ERR_OK)
 			  {
 				Scream_ret_enum Scream_ret = Scream_SinkBuffer(buf);
+
+				packetCount++;
+
 
 				//addr = netbuf_fromaddr(buf);
 				//port = netbuf_fromport(buf);
