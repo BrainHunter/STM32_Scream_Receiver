@@ -1,5 +1,6 @@
 # STM32 Scream Receiver
 Use the STM32F4Discovery with BaseBoard (STM32F4DIS-BB) as a Scream Receiver
+The STM32F4-Discovery has a cs43l22 Audio-Dac onboard. Together with the Ethernet connection of the Base board it is a perfect testing platform for this task.  
 
 For more Informations about scream see:
 https://github.com/duncanthrax/scream
@@ -15,8 +16,5 @@ The project was tested with 2 Channels, 16bits/ch with 44100KHz & 48000KHz. Any 
 The data from the fifo is transfered to the DAC using a DMA channel. - That's basicaly it. (Look for "StartAudioPlayback" and follow the data...)
 * The USB is configured as CDC to emulate a UART for debug output
 * 2 LEDs indicate a fifo overflow / underflow. If you see these blinking you know why the audio is bad ;-)
-
-
-
 
 
